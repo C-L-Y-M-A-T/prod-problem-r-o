@@ -47,14 +47,39 @@ demand_constrained_model = api.model('DemandConstrainedInput', {
                             description='Available resources'),
     'resource_usage': fields.List(fields.Nested(resource_usage_model), required=True, 
                                  description='Resource usage by products'),
-    'demand_constraints': fields.List(fields.Nested(demand_constraint_model), required=True, 
-                                     description='Demand constraints')
+    'demand_constraints': fields.List(fields.Nested(demand_constraint_model), required=False, 
+                                     description='Demand constraints (optional)')
 })
 
+# Resource utilization model
+resource_utilization_model = api.model('ResourceUtilization', {
+    'used': fields.Float(description='Amount of resource used'),
+    'available': fields.Float(description='Total available capacity'),
+    'utilization_pct': fields.Float(description='Utilization percentage')
+})
+
+# Basic output model
 optimization_output_model = api.model('OptimizationOutput', {
     'status': fields.String(description='Optimization status'),
     'objective_value': fields.Float(description='Objective function value'),
     'production_plan': fields.Raw(description='Production quantities for each product'),
-    'resource_utilization': fields.Raw(description='Resource utilization'),
+    'resource_utilization': fields.Nested(resource_utilization_model, 
+                                          description='Resource utilization details', 
+                                          as_list=True),
     'solver_message': fields.String(description='Additional solver information')
+})
+
+# Error model for validation errors
+error_model = api.model('ErrorModel', {
+    'status': fields.String(description='Error status'),
+    'solver_message': fields.String(description='Error message'),
+    'validation_errors': fields.List(fields.String, description='List of validation errors')
+})
+
+# Enhanced model with feasibility warnings
+enhanced_output_model = api.inherit('EnhancedOutput', optimization_output_model, {
+    'feasibility_warnings': fields.List(fields.String, 
+                                       description='Warnings about solution feasibility'),
+    'infeasible_constraints': fields.List(fields.String, 
+                                         description='List of infeasible constraints')
 })

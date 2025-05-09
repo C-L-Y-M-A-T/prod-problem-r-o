@@ -34,7 +34,11 @@ class DemandConstrainedOptimizer(BasicProductionOptimizer):
             
             # Extract data
             objective_type, products, resources, resource_usage = self._extract_common_data(data)
-            demand_constraints = {d['product_name']: d for d in data['demand_constraints']}
+            
+            # Process demand constraints or use empty dict if not provided
+            demand_constraints = {}
+            if 'demand_constraints' in data:
+                demand_constraints = {d['product_name']: d for d in data['demand_constraints']}
             
             # Create variables with demand constraints
             production_vars = self._create_production_variables_with_demand(model, products, demand_constraints)
@@ -77,11 +81,16 @@ class DemandConstrainedOptimizer(BasicProductionOptimizer):
             
             # Apply demand constraints if they exist
             if product_name in demand_constraints:
-                if 'min_demand' in demand_constraints[product_name]:
-                    lb = demand_constraints[product_name]['min_demand']
+                constraint = demand_constraints[product_name]
                 
-                if 'max_demand' in demand_constraints[product_name]:
-                    ub = demand_constraints[product_name]['max_demand']
+                if 'min_demand' in constraint and constraint['min_demand'] is not None:
+                    lb = max(0.0, constraint['min_demand'])  # Ensure non-negative
+                
+                if 'max_demand' in constraint and constraint['max_demand'] is not None:
+                    ub = constraint['max_demand']
+                    # If min > max, use min as both (will be caught in validation but prevent solver error)
+                    if lb > ub:
+                        ub = lb
             
             production_vars[product_name] = model.addVar(
                 name=f"produce_{product_name}",

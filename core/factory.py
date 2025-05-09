@@ -9,6 +9,7 @@ import inspect
 from typing import Dict, Type, Any, List
 from core.optimizers.base import ProductionOptimizerBase
 import core.optimizers as optimizers_pkg
+from core.validation import validate_optimization_input, validate_solution_feasibility
 
 
 class OptimizerFactory:
@@ -47,6 +48,49 @@ class OptimizerFactory:
         if not optimizer_class:
             raise ValueError(f"Unknown optimizer type: {optimizer_type}")
         return optimizer_class()
+    
+    @classmethod
+    def optimize(cls, optimizer_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Validate input data and solve the optimization problem
+        
+        Args:
+            optimizer_type: String identifier for the desired optimizer type
+            data: Dictionary containing optimization input data
+            
+        Returns:
+            Dictionary with optimization results and validation info
+            
+        Raises:
+            ValueError: If the optimizer type is not registered
+        """
+        try:
+            # Validate input data
+            is_valid, validation_errors = validate_optimization_input(data)
+            if not is_valid:
+                return {
+                    'status': 'validation_error',
+                    'solver_message': 'Input validation failed',
+                    'validation_errors': validation_errors
+                }
+            
+            # Get the optimizer and solve
+            optimizer = cls.get_optimizer(optimizer_type)
+            result = optimizer.solve(data)
+            
+            # Validate solution feasibility if optimal
+            if result['status'] == 'optimal':
+                is_feasible, feasibility_warnings = validate_solution_feasibility(result, data)
+                if not is_feasible:
+                    result['status'] = 'solution_warning'
+                    result['feasibility_warnings'] = feasibility_warnings
+                elif feasibility_warnings:
+                    # Solution is feasible but with warnings
+                    result['feasibility_warnings'] = feasibility_warnings
+            
+            return result
+        except ValueError as e:
+            return {'status': 'error', 'solver_message': str(e)}
     
     @classmethod
     def discover_optimizers(cls) -> None:

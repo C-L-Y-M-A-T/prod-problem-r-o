@@ -7,6 +7,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional
 import gurobipy as gp
 from gurobipy import GRB
+from core.validation import validate_optimization_input, validate_solution_feasibility
 
 class ProductionOptimizerBase(ABC):
     """
@@ -28,6 +29,40 @@ class ProductionOptimizerBase(ABC):
             Dictionary with optimization results
         """
         pass
+    
+    def validate_and_solve(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Validate input data and solve the optimization problem
+        
+        Args:
+            data: Dictionary containing optimization input data
+            
+        Returns:
+            Dictionary with optimization results and validation info
+        """
+        # Validate input data
+        is_valid, validation_errors = validate_optimization_input(data)
+        if not is_valid:
+            return {
+                'status': 'validation_error',
+                'solver_message': 'Input validation failed',
+                'validation_errors': validation_errors
+            }
+        
+        # If validation passed, solve the problem
+        result = self.solve(data)
+        
+        # Validate solution feasibility
+        if result['status'] == 'optimal':
+            is_feasible, feasibility_warnings = validate_solution_feasibility(result, data)
+            if not is_feasible:
+                result['status'] = 'solution_warning'
+                result['feasibility_warnings'] = feasibility_warnings
+            elif len(feasibility_warnings) > 0:
+                # Solution is feasible but with warnings
+                result['feasibility_warnings'] = feasibility_warnings
+        
+        return result
     
     def _extract_common_data(self, data: Dict[str, Any]) -> tuple:
         """
@@ -61,7 +96,11 @@ class ProductionOptimizerBase(ABC):
         Returns:
             Gurobi model instance
         """
-        return gp.Model(self.model_name)
+        model = gp.Model(self.model_name)
+        # Set some parameters to improve numerical stability
+        model.setParam('NumericFocus', 3)  # Higher focus on numerical accuracy
+        model.setParam('FeasibilityTol', 1e-6)  # Tighter feasibility tolerance
+        return model
     
     def _set_objective(self, model: gp.Model, objective_type: str, 
                       products: Dict[str, Dict], production_vars: Dict[str, gp.Var]) -> None:
@@ -121,11 +160,12 @@ class ProductionOptimizerBase(ABC):
             constr_name = f"resource_{resource_name}"
             if constr_name in model.getConstrs():
                 constr = model.getConstrByName(constr_name)
+                available = constr.getRHS()
+                used = available - constr.getSlack()
                 utilization[resource_name] = {
-                    'used': constr.getRHS() - constr.getSlack(),
-                    'available': constr.getRHS(),
-                    'utilization_pct': ((constr.getRHS() - constr.getSlack()) / constr.getRHS()) * 100 
-                                      if constr.getRHS() > 0 else 0
+                    'used': used,
+                    'available': available,
+                    'utilization_pct': (used / available) * 100 if available > 0 else 0
                 }
         return utilization
     
@@ -143,17 +183,39 @@ class ProductionOptimizerBase(ABC):
             Dictionary containing optimization results
         """
         if model.status == GRB.OPTIMAL:
+            # Round small values to zero to handle numerical precision issues
+            epsilon = 1e-8
+            production_plan = {}
+            for name, var in production_vars.items():
+                value = var.x
+                if abs(value) < epsilon:
+                    value = 0.0
+                production_plan[name] = value
+                
             result = {
                 'status': 'optimal',
                 'objective_value': model.objVal,
-                'production_plan': {name: var.x for name, var in production_vars.items()},
+                'production_plan': production_plan,
                 'resource_utilization': self._get_resource_utilization(model, resources),
                 'solver_message': 'Optimal solution found'
             }
         elif model.status == GRB.INFEASIBLE:
+            # Try to get infeasibility analysis
+            model.computeIIS()
+            infeasible_constraints = []
+            for c in model.getConstrs():
+                if c.IISConstr:
+                    infeasible_constraints.append(c.ConstrName)
+            
             result = {
                 'status': 'infeasible',
-                'solver_message': 'The model is infeasible'
+                'solver_message': 'The model is infeasible',
+                'infeasible_constraints': infeasible_constraints if infeasible_constraints else "Unknown"
+            }
+        elif model.status == GRB.UNBOUNDED:
+            result = {
+                'status': 'unbounded',
+                'solver_message': 'The model is unbounded (no finite optimal solution exists)'
             }
         else:
             result = {

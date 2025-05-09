@@ -22,6 +22,19 @@ optimizer_list_model = api.model('OptimizerList', {
     'optimizers': fields.List(fields.String, description='Available optimizer types')
 })
 
+# Model for validation errors
+validation_error_model = api.model('ValidationError', {
+    'status': fields.String(description='Error status'),
+    'solver_message': fields.String(description='Error message'),
+    'validation_errors': fields.List(fields.String, description='List of validation errors')
+})
+
+# Enhanced optimization output model that includes warnings
+enhanced_output_model = api.inherit('EnhancedOptimizationOutput', optimization_output_model, {
+    'feasibility_warnings': fields.List(fields.String, description='Warnings about solution feasibility', required=False),
+    'infeasible_constraints': fields.Raw(description='Information about infeasible constraints', required=False)
+})
+
 
 @ns.route('/optimizers')
 class OptimizerList(Resource):
@@ -42,7 +55,8 @@ class OptimizerList(Resource):
 class ProductionOptimization(Resource):
     @ns.doc('solve_optimization')
     @ns.expect(demand_constrained_model)  # Using the most comprehensive model
-    @ns.marshal_with(optimization_output_model, code=200)
+    @ns.response(200, 'Success', enhanced_output_model)
+    @ns.response(400, 'Validation Error', validation_error_model)
     def post(self, optimizer_type):
         """
         Solve a production optimization problem using the specified optimizer
@@ -54,15 +68,19 @@ class ProductionOptimization(Resource):
             Dictionary with optimization results
             
         Raises:
-            400 Bad Request: If the optimizer type is unknown
+            400 Bad Request: If the optimizer type is unknown or validation fails
         """
         try:
             data = request.json
-            optimizer = OptimizerFactory.get_optimizer(optimizer_type)
-            result = optimizer.solve(data)
+            result = OptimizerFactory.optimize(optimizer_type, data)
+            
+            if result['status'] == 'validation_error':
+                return result, 400
+                
             return result
-        except ValueError as e:
-            return {'status': 'error', 'solver_message': str(e)}, 400
+            
+        except Exception as e:
+            return {'status': 'error', 'solver_message': str(e)}, 500
 
 
 # For backward compatibility
@@ -70,7 +88,8 @@ class ProductionOptimization(Resource):
 class BasicOptimization(Resource):
     @ns.doc('solve_basic_optimization')
     @ns.expect(basic_optimization_model)
-    @ns.marshal_with(optimization_output_model, code=200)
+    @ns.response(200, 'Success', enhanced_output_model)
+    @ns.response(400, 'Validation Error', validation_error_model)
     def post(self):
         """
         Solve a basic production optimization problem
@@ -79,8 +98,11 @@ class BasicOptimization(Resource):
             Dictionary with optimization results
         """
         data = request.json
-        optimizer = OptimizerFactory.get_optimizer('basic')
-        result = optimizer.solve(data)
+        result = OptimizerFactory.optimize('basic', data)
+        
+        if result['status'] == 'validation_error':
+            return result, 400
+            
         return result
 
 
@@ -88,7 +110,8 @@ class BasicOptimization(Resource):
 class DemandConstrained(Resource):
     @ns.doc('solve_demand_constrained')
     @ns.expect(demand_constrained_model)
-    @ns.marshal_with(optimization_output_model, code=200)
+    @ns.response(200, 'Success', enhanced_output_model)
+    @ns.response(400, 'Validation Error', validation_error_model)
     def post(self):
         """
         Solve a production optimization problem with demand constraints
@@ -97,6 +120,9 @@ class DemandConstrained(Resource):
             Dictionary with optimization results
         """
         data = request.json
-        optimizer = OptimizerFactory.get_optimizer('demand-constrained')
-        result = optimizer.solve(data)
+        result = OptimizerFactory.optimize('demand-constrained', data)
+        
+        if result['status'] == 'validation_error':
+            return result, 400
+            
         return result

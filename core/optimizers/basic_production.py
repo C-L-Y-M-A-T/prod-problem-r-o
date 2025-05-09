@@ -43,6 +43,8 @@ class BasicProductionOptimizer(ProductionOptimizerBase):
             # Add resource constraints
             self._add_resource_constraints(model, resources, products, production_vars, resource_usage)
             
+            # Add non-negativity constraints (already included in variable definition)
+            
             # Optimize the model
             model.optimize()
             
