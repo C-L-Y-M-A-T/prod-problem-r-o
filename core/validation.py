@@ -112,6 +112,24 @@ def validate_optimization_input(data: Dict[str, Any]) -> Tuple[bool, List[str]]:
             if 'min_demand' in dc and 'max_demand' in dc and dc['min_demand'] > dc['max_demand']:
                 errors.append(f"Product '{dc['product_name']}' has min_demand ({dc['min_demand']}) greater than max_demand ({dc['max_demand']})")
     
+    # Validate total constraints if present
+    if 'total_constraints' in data and data['total_constraints']:
+        total_constraints = data['total_constraints']
+        
+        if 'min_total' in total_constraints and total_constraints['min_total'] is not None:
+            if total_constraints['min_total'] < 0:
+                errors.append(f"Total constraints has negative min_total: {total_constraints['min_total']}")
+        
+        if 'max_total' in total_constraints and total_constraints['max_total'] is not None:
+            if total_constraints['max_total'] < 0:
+                errors.append(f"Total constraints has negative max_total: {total_constraints['max_total']}")
+        
+        if ('min_total' in total_constraints and total_constraints['min_total'] is not None and
+            'max_total' in total_constraints and total_constraints['max_total'] is not None):
+            if total_constraints['min_total'] > total_constraints['max_total']:
+                errors.append(f"Total constraints has min_total ({total_constraints['min_total']}) " +
+                             f"greater than max_total ({total_constraints['max_total']})")
+    
     return len(errors) == 0, errors
 
 
@@ -181,5 +199,18 @@ def validate_solution_feasibility(result: Dict[str, Any], input_data: Dict[str, 
                 
                 if 'max_demand' in dc and quantity > dc['max_demand'] + epsilon:
                     warnings.append(f"Product '{product}' production ({quantity}) violates maximum demand constraint ({dc['max_demand']})")
+    
+    # Check total production constraints if they exist
+    if 'total_constraints' in input_data and input_data['total_constraints']:
+        total_constraints = input_data['total_constraints']
+        total_production = sum(result['production_plan'].values())
+        
+        if 'min_total' in total_constraints and total_constraints['min_total'] is not None:
+            if total_production < total_constraints['min_total'] - epsilon:
+                warnings.append(f"Total production ({total_production}) violates minimum total constraint ({total_constraints['min_total']})")
+        
+        if 'max_total' in total_constraints and total_constraints['max_total'] is not None:
+            if total_production > total_constraints['max_total'] + epsilon:
+                warnings.append(f"Total production ({total_production}) violates maximum total constraint ({total_constraints['max_total']})")
     
     return len(warnings) == 0, warnings

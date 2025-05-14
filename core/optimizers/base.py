@@ -164,8 +164,8 @@ class ProductionOptimizerBase(ABC):
             model.addConstr(constraint <= resource['available_capacity'], name=f"resource_{resource_name}")
     
     def _add_total_product_constraints(self, model: gp.Model, products: Dict[str, Dict],
-                                     production_vars: Dict[str, gp.Var], 
-                                     total_constraints: Dict[str, float]) -> None:
+                                    production_vars: Dict[str, gp.Var], 
+                                    total_constraints: Dict[str, float]) -> None:
         """
         Add constraints on the total number of products to be manufactured
         
@@ -185,13 +185,15 @@ class ProductionOptimizerBase(ABC):
         
         # Add minimum total constraint if specified
         if 'min_total' in total_constraints and total_constraints['min_total'] is not None:
-            min_total = total_constraints['min_total']
-            model.addConstr(total_production >= min_total, name="min_total_production")
+            min_total = float(total_constraints['min_total'])  # Ensure it's a float
+            if min_total > 0:  # Only add if positive
+                model.addConstr(total_production >= min_total, name="min_total_production")
         
         # Add maximum total constraint if specified
         if 'max_total' in total_constraints and total_constraints['max_total'] is not None:
-            max_total = total_constraints['max_total']
-            model.addConstr(total_production <= max_total, name="max_total_production")
+            max_total = float(total_constraints['max_total'])  # Ensure it's a float
+            if max_total > 0:  # Only add if positive
+                model.addConstr(total_production <= max_total, name="max_total_production")
     
     def _get_resource_utilization(self, model: gp.Model, resources: Dict[str, Dict], 
                                 production_vars: Dict[str, gp.Var], resource_usage: Dict[str, Dict]) -> Dict[str, Dict]:
