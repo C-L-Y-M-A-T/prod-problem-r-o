@@ -53,7 +53,7 @@ class DemandConstrainedOptimizer(BasicProductionOptimizer):
             model.optimize()
             
             # Prepare results
-            return self._prepare_result(model, production_vars, resources)
+            return self._prepare_result(model, production_vars, resources, resource_usage)
         
         except Exception as e:
             return {

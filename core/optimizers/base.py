@@ -28,7 +28,26 @@ class ProductionOptimizerBase(ABC):
         Returns:
             Dictionary with optimization results
         """
-        pass
+        # Get common data
+        objective_type, products, resources, resource_usage = self._extract_common_data(data)
+        
+        # Create model
+        model = self._create_model()
+        
+        # Create variables
+        production_vars = self._create_production_variables(model, products)
+        
+        # Set objective
+        self._set_objective(model, objective_type, products, production_vars)
+        
+        # Add constraints
+        self._add_constraints(model, resources, products, production_vars, resource_usage, data)
+        
+        # Optimize
+        model.optimize()
+        
+        # Return result
+        return self._prepare_result(model, production_vars, resources, resource_usage)
     
     def validate_and_solve(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -144,33 +163,45 @@ class ProductionOptimizerBase(ABC):
                     constraint += resource_usage[product_name][resource_name] * production_vars[product_name]
             model.addConstr(constraint <= resource['available_capacity'], name=f"resource_{resource_name}")
     
-    def _get_resource_utilization(self, model: gp.Model, resources: Dict[str, Dict]) -> Dict[str, Dict]:
+    def _get_resource_utilization(self, model: gp.Model, resources: Dict[str, Dict], 
+                                production_vars: Dict[str, gp.Var], resource_usage: Dict[str, Dict]) -> Dict[str, Dict]:
         """
-        Calculate resource utilization from model constraints
+        Calculate resource utilization from model solution and resource usage
         
         Args:
             model: Gurobi model instance
             resources: Dictionary of resource information
+            production_vars: Dictionary of Gurobi variables for production quantities
+            resource_usage: Dictionary of resource usage by products
             
         Returns:
             Dictionary containing resource utilization information
         """
         utilization = {}
-        for resource_name in resources:
-            constr_name = f"resource_{resource_name}"
-            if constr_name in model.getConstrs():
-                constr = model.getConstrByName(constr_name)
-                available = constr.getRHS()
-                used = available - constr.getSlack()
-                utilization[resource_name] = {
-                    'used': used,
-                    'available': available,
-                    'utilization_pct': (used / available) * 100 if available > 0 else 0
-                }
+        
+        # Calculate actual resource usage based on production plan
+        for resource_name, resource in resources.items():
+            available = resource['available_capacity']
+            used = 0.0
+            
+            # Calculate used amount for each resource
+            for product_name, product_usage in resource_usage.items():
+                if resource_name in product_usage and product_name in production_vars:
+                    var = production_vars[product_name]
+                    # Only add to usage if variable has a value (model is solved)
+                    if var.x is not None:
+                        used += product_usage[resource_name] * var.x
+            
+            utilization[resource_name] = {
+                'used': used,
+                'available': available,
+                'utilization_pct': (used / available) * 100 if available > 0 else 0
+            }
+        
         return utilization
     
     def _prepare_result(self, model: gp.Model, production_vars: Dict[str, gp.Var], 
-                       resources: Dict[str, Dict]) -> Dict[str, Any]:
+                    resources: Dict[str, Dict], resource_usage: Dict[str, Dict]) -> Dict[str, Any]:
         """
         Prepare result dictionary based on optimization outcome
         
@@ -178,6 +209,7 @@ class ProductionOptimizerBase(ABC):
             model: Gurobi model instance
             production_vars: Dictionary of Gurobi variables for production quantities
             resources: Dictionary of resource information
+            resource_usage: Dictionary of resource usage by products
             
         Returns:
             Dictionary containing optimization results
@@ -196,7 +228,7 @@ class ProductionOptimizerBase(ABC):
                 'status': 'optimal',
                 'objective_value': model.objVal,
                 'production_plan': production_plan,
-                'resource_utilization': self._get_resource_utilization(model, resources),
+                'resource_utilization': self._get_resource_utilization(model, resources, production_vars, resource_usage),
                 'solver_message': 'Optimal solution found'
             }
         elif model.status == GRB.INFEASIBLE:

@@ -49,13 +49,14 @@ class BasicProductionOptimizer(ProductionOptimizerBase):
             model.optimize()
             
             # Prepare results
-            return self._prepare_result(model, production_vars, resources)
+            return self._prepare_result(model, production_vars, resources, resource_usage)
         
         except Exception as e:
             return {
                 'status': 'error',
                 'solver_message': str(e)
             }
+
     
     def _create_production_variables(self, model: gp.Model, products: Dict[str, Dict]) -> Dict[str, gp.Var]:
         """
