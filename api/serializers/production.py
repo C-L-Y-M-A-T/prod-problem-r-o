@@ -27,6 +27,12 @@ demand_constraint_model = api.model('DemandConstraint', {
     'max_demand': fields.Float(required=False, description='Maximum demand (optional)')
 })
 
+# New model for total product constraints
+total_product_constraints_model = api.model('TotalProductConstraints', {
+    'min_total': fields.Float(required=False, description='Minimum total products across all types (optional)'),
+    'max_total': fields.Float(required=False, description='Maximum total products across all types (optional)')
+})
+
 basic_optimization_model = api.model('BasicOptimizationInput', {
     'objective': fields.String(required=True, enum=['maximize_profit', 'minimize_cost'], 
                               description='Optimization objective'),
@@ -35,7 +41,9 @@ basic_optimization_model = api.model('BasicOptimizationInput', {
     'resources': fields.List(fields.Nested(resource_model), required=True, 
                             description='Available resources'),
     'resource_usage': fields.List(fields.Nested(resource_usage_model), required=True, 
-                                 description='Resource usage by products')
+                                 description='Resource usage by products'),
+    'total_constraints': fields.Nested(total_product_constraints_model, required=False,
+                                    description='Constraints on total production (optional)')
 })
 
 demand_constrained_model = api.model('DemandConstrainedInput', {
@@ -48,7 +56,9 @@ demand_constrained_model = api.model('DemandConstrainedInput', {
     'resource_usage': fields.List(fields.Nested(resource_usage_model), required=True, 
                                  description='Resource usage by products'),
     'demand_constraints': fields.List(fields.Nested(demand_constraint_model), required=False, 
-                                     description='Demand constraints (optional)')
+                                     description='Demand constraints (optional)'),
+    'total_constraints': fields.Nested(total_product_constraints_model, required=False,
+                                    description='Constraints on total production (optional)')
 })
 
 # Resource utilization model
@@ -66,7 +76,8 @@ optimization_output_model = api.model('OptimizationOutput', {
     'resource_utilization': fields.Nested(resource_utilization_model, 
                                           description='Resource utilization details', 
                                           as_list=True),
-    'solver_message': fields.String(description='Additional solver information')
+    'solver_message': fields.String(description='Additional solver information'),
+    'total_production': fields.Float(description='Total production quantity across all products', required=False)
 })
 
 # Error model for validation errors

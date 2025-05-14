@@ -43,6 +43,10 @@ class BasicProductionOptimizer(ProductionOptimizerBase):
             # Add resource constraints
             self._add_resource_constraints(model, resources, products, production_vars, resource_usage)
             
+            # Add total product constraints if specified
+            if 'total_constraints' in data and data['total_constraints']:
+                self._add_total_product_constraints(model, products, production_vars, data['total_constraints'])
+            
             # Add non-negativity constraints (already included in variable definition)
             
             # Optimize the model

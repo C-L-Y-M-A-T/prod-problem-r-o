@@ -163,6 +163,36 @@ class ProductionOptimizerBase(ABC):
                     constraint += resource_usage[product_name][resource_name] * production_vars[product_name]
             model.addConstr(constraint <= resource['available_capacity'], name=f"resource_{resource_name}")
     
+    def _add_total_product_constraints(self, model: gp.Model, products: Dict[str, Dict],
+                                     production_vars: Dict[str, gp.Var], 
+                                     total_constraints: Dict[str, float]) -> None:
+        """
+        Add constraints on the total number of products to be manufactured
+        
+        Args:
+            model: Gurobi model instance
+            products: Dictionary of product information
+            production_vars: Dictionary of Gurobi variables for production quantities
+            total_constraints: Dictionary with min_total and/or max_total constraints
+        """
+        if not total_constraints:
+            return
+            
+        # Create expression for the sum of all production variables
+        total_production = gp.LinExpr()
+        for product_name in products:
+            total_production += production_vars[product_name]
+        
+        # Add minimum total constraint if specified
+        if 'min_total' in total_constraints and total_constraints['min_total'] is not None:
+            min_total = total_constraints['min_total']
+            model.addConstr(total_production >= min_total, name="min_total_production")
+        
+        # Add maximum total constraint if specified
+        if 'max_total' in total_constraints and total_constraints['max_total'] is not None:
+            max_total = total_constraints['max_total']
+            model.addConstr(total_production <= max_total, name="max_total_production")
+    
     def _get_resource_utilization(self, model: gp.Model, resources: Dict[str, Dict], 
                                 production_vars: Dict[str, gp.Var], resource_usage: Dict[str, Dict]) -> Dict[str, Dict]:
         """
@@ -200,6 +230,22 @@ class ProductionOptimizerBase(ABC):
         
         return utilization
     
+    def _calculate_total_production(self, production_vars: Dict[str, gp.Var]) -> float:
+        """
+        Calculate the total production quantity across all products
+        
+        Args:
+            production_vars: Dictionary of Gurobi variables for production quantities
+            
+        Returns:
+            Total production quantity
+        """
+        total = 0.0
+        for _, var in production_vars.items():
+            if var.x is not None:
+                total += var.x
+        return total
+    
     def _prepare_result(self, model: gp.Model, production_vars: Dict[str, gp.Var], 
                     resources: Dict[str, Dict], resource_usage: Dict[str, Dict]) -> Dict[str, Any]:
         """
@@ -224,11 +270,15 @@ class ProductionOptimizerBase(ABC):
                     value = 0.0
                 production_plan[name] = value
                 
+            # Calculate total production
+            total_production = self._calculate_total_production(production_vars)
+                
             result = {
                 'status': 'optimal',
                 'objective_value': model.objVal,
                 'production_plan': production_plan,
                 'resource_utilization': self._get_resource_utilization(model, resources, production_vars, resource_usage),
+                'total_production': total_production,
                 'solver_message': 'Optimal solution found'
             }
         elif model.status == GRB.INFEASIBLE:
